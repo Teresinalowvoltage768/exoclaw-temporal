@@ -1,12 +1,12 @@
 # exoclaw-temporal
 
-AI agents that don't die.
+[OpenClaw](https://github.com/Clause-Logic/exoclaw)-grade AI agents that don't die.
 
 Most agent frameworks run your agent as a single in-process loop. When the process dies — OOM kill, pod eviction, deploy, network blip — the agent dies with it. Mid-tool-call, mid-reasoning, mid-subagent. The user gets silence or an error. You have no idea how far it got.
 
 [Temporal](https://temporal.io) solves durable execution. Every step is checkpointed. If a worker dies, Temporal reschedules on a survivor. The agent resumes exactly where it left off — not from the start of the turn, not from the last tool call, but from the exact activity that was interrupted.
 
-This repo wires [exoclaw](https://github.com/Clause-Logic/exoclaw) agents into Temporal. Same tools, same conversation memory, same LLM provider. Just unbreakable.
+This repo brings OpenClaw's agentic capabilities — tool use, multi-turn memory, any LLM — into Temporal's durable execution model. Powered by [exoclaw](https://github.com/Clause-Logic/exoclaw), the protocol-only framework that OpenClaw is built on. Same tools, same conversation memory, same LLM provider. Just unbreakable.
 
 ## Why this combination is powerful
 
