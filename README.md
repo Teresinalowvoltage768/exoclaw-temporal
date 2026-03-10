@@ -162,6 +162,43 @@ The bounce demo submits a turn with a slow shell command, kills one worker pod, 
 
 **Note on shared storage:** The PVC requests `ReadWriteMany` — required so both worker replicas can share the workspace. In kind, the default `local-path` provisioner only supports `ReadWriteOnce`. For multi-node kind testing, install an NFS provisioner or run with a single worker replica. In production (EKS, GKE), use EFS or a similar RWX-capable storage class.
 
+## Sandboxing tool execution
+
+By default, the `exec` tool runs shell commands inside the worker pod — fine for trusted workloads, but not suitable for multi-tenant deployments or untrusted code.
+
+exoclaw-temporal's `Executor` protocol makes it straightforward to swap in any isolation strategy. Here are the main options:
+
+**1. Disable the shell tool**
+The simplest approach. Don't register `ExecTool` for untrusted tenants. File and web tools are already scoped to the workspace path.
+
+**2. agent-sandbox (included)**
+[agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) is a Kubernetes CRD + controller (under kubernetes-sigs) that manages isolated, stateful pods for agent workloads. Each session gets its own `SandboxClaim`; shell commands POST to that pod's `/execute` endpoint via K8s DNS.
+
+Enable it with a single flag:
+```python
+WorkspaceConfig(path="/workspace", sandbox_exec=True)
+```
+
+Deploy the controller and template:
+```bash
+# Install agent-sandbox controller
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.1.1/manifest.yaml
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/v0.1.1/extensions.yaml
+
+# Deploy sandbox template, router, and RBAC
+kubectl apply -f k8s/sandbox/sandbox.yaml
+```
+
+For kernel-level isolation, add `runtimeClassName: gvisor` to the `SandboxTemplate` in `k8s/sandbox/sandbox.yaml`. GKE supports this natively; on self-managed clusters install [gVisor](https://gvisor.dev/docs/user_guide/install/).
+
+Note: agent-sandbox is alpha (v0.1.x). The `shlex.split`-based sandbox runtime doesn't interpret shell operators (`&&`, `|`) — use `sh -c "cmd1 && cmd2"` for chained commands.
+
+**3. Temporal namespace isolation**
+Each tenant gets their own Temporal namespace. Workers connect to a namespace-scoped task queue. This isolates workflow history and execution — a tenant cannot see or affect another's workflows — but does not sandbox the filesystem or shell.
+
+**4. Separate worker pools per tenant**
+Dedicate worker pods to each tenant, placed in their own Kubernetes namespace with NetworkPolicy restricting egress. Combine with any of the above for defense in depth.
+
 ## Architecture
 
 ```
