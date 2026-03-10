@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exoclaw-temporal-worker
+  namespace: default
+  labels:
+    app: exoclaw-temporal-worker
+spec:
+  # Multiple replicas = multiple workers. Kill one, work continues.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: exoclaw-temporal-worker
+  template:
+    metadata:
+      labels:
+        app: exoclaw-temporal-worker
+    spec:
+      nodeSelector:
+        node-role: agent-worker
+      containers:
+        - name: worker
+          image: exoclaw-temporal-worker:local
+          imagePullPolicy: Never  # loaded via kind load docker-image
+          command: ["python", "-m", "exoclaw_temporal.turn_based", "--worker"]
+          args: ["--temporal-url", "temporal-frontend.temporal.svc.cluster.local:7233"]
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: exoclaw-secrets
+                  key: anthropic-api-key
+            - name: NANOBOT_WORKSPACE
+              value: /workspace
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: exoclaw-workspace

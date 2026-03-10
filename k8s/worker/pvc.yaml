@@ -1,0 +1,19 @@
+# Shared workspace volume — all worker pods mount this.
+# Files written by one pod (session JSONL, cron state, tool outputs)
+# are immediately visible to any other pod that takes over an activity.
+#
+# In production: replace storageClassName with your EFS/NFS provisioner.
+# In kind: uses the default local-path provisioner (single-node access only).
+# For multi-node kind demos, use a ReadWriteMany provisioner like NFS.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: exoclaw-workspace
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

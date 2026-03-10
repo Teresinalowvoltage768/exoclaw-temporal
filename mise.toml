@@ -1,0 +1,56 @@
+[tools]
+uv = "latest"
+kubectl = "latest"
+helm = "latest"
+kind = "latest"
+
+[tasks.lint]
+description = "Type check and lint"
+run = [
+    "uv run ty check exoclaw_temporal",
+    "uv run ruff check exoclaw_temporal",
+]
+
+[tasks.format]
+description = "Format code"
+run = "uv run ruff format exoclaw_temporal"
+
+[tasks.test]
+description = "Run tests"
+run = "uv run pytest tests/"
+
+[tasks.cluster-up]
+description = "Create kind cluster with 3 nodes"
+run = "kind create cluster --config k8s/kind-config.yaml --name exoclaw-temporal"
+
+[tasks.cluster-down]
+description = "Destroy kind cluster"
+run = "kind delete cluster --name exoclaw-temporal"
+
+[tasks.temporal-up]
+description = "Install Temporal into the kind cluster"
+run = [
+    "helm repo add temporal https://go.temporal.io/helm-charts",
+    "helm repo update",
+    "helm install temporal temporal/temporal --namespace temporal --create-namespace --values k8s/temporal/values.yaml",
+]
+
+[tasks.worker-deploy]
+description = "Build and deploy the worker to kind"
+run = [
+    "docker build -t exoclaw-temporal-worker:local .",
+    "kind load docker-image exoclaw-temporal-worker:local --name exoclaw-temporal",
+    "kubectl apply -f k8s/worker/",
+]
+
+[tasks.demo-turn]
+description = "Run turn-based demo (local, no k8s)"
+run = "uv run python -m exoclaw_temporal.turn_based"
+
+[tasks.demo-session]
+description = "Run session-based demo (local, no k8s)"
+run = "uv run python -m exoclaw_temporal.session_based"
+
+[tasks.bounce-demo]
+description = "Kill a worker node mid-execution to demonstrate durability"
+run = "bash scripts/bounce_demo.sh"

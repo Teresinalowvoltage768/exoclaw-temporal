@@ -1,0 +1,15 @@
+# 3-node kind cluster — 1 control plane + 2 workers
+# This lets us demonstrate worker-bounce durability:
+#   kill one worker node mid-execution and watch Temporal
+#   reschedule the activity on the surviving node.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: exoclaw-temporal
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      node-role: agent-worker
+  - role: worker
+    labels:
+      node-role: agent-worker
