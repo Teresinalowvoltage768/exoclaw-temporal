@@ -1,114 +1,146 @@
 # exoclaw-temporal
 
-Exoclaw on [Temporal](https://temporal.io) — feature-complete AI agent with durable execution.
+AI agents that don't die.
 
-Everything [exoclaw-nanobot](https://github.com/Clause-Logic/exoclaw) can do, now unbreakable. Kill a worker pod mid-tool-call. Temporal reschedules on a surviving pod. The agent continues exactly where it left off.
+Most agent frameworks run your agent as a single in-process loop. When the process dies — OOM kill, pod eviction, deploy, network blip — the agent dies with it. Mid-tool-call, mid-reasoning, mid-subagent. The user gets silence or an error. You have no idea how far it got.
 
-## What's durable
+[Temporal](https://temporal.io) solves durable execution. Every step is checkpointed. If a worker dies, Temporal reschedules on a survivor. The agent resumes exactly where it left off — not from the start of the turn, not from the last tool call, but from the exact activity that was interrupted.
 
-| Operation | In nanobot | In exoclaw-temporal |
-|---|---|---|
-| LLM call | In-process, lost if process dies | Temporal activity, retried on any worker |
-| Tool execution | In-process, lost if process dies | Temporal activity with heartbeat |
-| Conversation history | JSONL on local disk | JSONL on shared PVC (any worker can read/write) |
-| Cron jobs | File-backed, lost if process dies | Temporal Schedules (future) |
-| Subagent spawn | Nested in-process loop | Child workflow (future) |
+This repo wires [exoclaw](https://github.com/Clause-Logic/exoclaw) agents into Temporal. Same tools, same conversation memory, same LLM provider. Just unbreakable.
+
+## Why this combination is powerful
+
+An exoclaw agent is a loop: call the LLM, execute tools, call the LLM again, until done. That loop can run for seconds or hours depending on the task. It might execute dozens of tool calls — shell commands, web fetches, file writes, spawned subagents. Any of those can be slow. Any of them can fail. And in a real deployment, workers die.
+
+Temporal maps onto this loop naturally:
+
+```
+AgentTurnWorkflow (durable execution unit)
+  │
+  ├── activity: build_prompt        ← load conversation history from shared volume
+  │
+  └── loop:
+        ├── activity: llm_chat      ← LLM call, retried on transient failure
+        ├── activity: execute_tool  ← tool call, heartbeat keeps it alive
+        ├── activity: execute_tool  ← another tool, on any available worker
+        └── activity: record_turn   ← persist new messages to shared volume
+```
+
+Each box is an activity. Each activity is independently retried. If a worker pod is killed between any two boxes, Temporal replays the completed ones from history and picks up at the next. The messages list — the accumulating state of the agent loop — lives in Temporal's workflow history, not in process memory.
+
+This means:
+
+- **Deploy your workers freely.** Rolling deploys, pod evictions, node replacements — agents in flight continue on surviving pods.
+- **Scale workers horizontally.** Activities are stateless. Add workers to handle load. Remove them without affecting running agents.
+- **Retry at the right granularity.** A failed tool call retries the tool call, not the whole turn. A failed LLM call retries just that LLM call.
+- **Full observability.** Every activity, every retry, every input and output is in Temporal's history. You can see exactly what your agent did and replay it.
+- **Long-running tasks work.** Shell commands that take minutes, web crawls, subagent spawns — they heartbeat to Temporal so nothing times out prematurely.
 
 ## Two approaches
 
 ### `turn_based/` — one workflow per message turn
 
-Simplest mental model. Each user message starts a fresh `AgentTurnWorkflow`. The workflow runs the agent loop — LLM calls and tool calls — as activities. Conversation history is loaded from disk at the start of each turn and saved at the end.
+Each user message starts a fresh `AgentTurnWorkflow`. Simple mental model. Easy to reason about. The conversation history loads from disk at the start of each turn and saves at the end — any worker that mounts the shared volume can handle any turn.
 
-```
-User message → AgentTurnWorkflow → activities (LLM, tools) → response
-```
-
-Good for: most production use cases. Easy to reason about, easy to scale.
+Good for most production use cases.
 
 ### `session_based/` — one long-running workflow per session
 
-One `AgentSessionWorkflow` per conversation. New messages arrive as Temporal **Signals**. The workflow accumulates state across turns. After 50 turns it calls `continue_as_new` to keep workflow history bounded while conversation history stays in the external store.
+One `AgentSessionWorkflow` per conversation. New messages arrive as Temporal **Signals**. The workflow processes turns sequentially. After 50 turns it calls `continue_as_new` to keep history bounded.
 
-```
-User message → Signal → AgentSessionWorkflow → activities → Query for response
-```
+This approach shines when a single session receives messages from multiple sources simultaneously — CLI, Slack, a scheduled heartbeat — all signaling the same workflow ID. You can also query the workflow's current status at any time without waiting for a turn to complete.
 
-Good for: showing Temporal's Signal/Query/continue_as_new primitives. Sessions that receive messages from multiple sources (CLI + scheduled heartbeat + Slack) can all signal the same workflow ID.
+## Quickstart
 
-## Running locally (no k8s)
+**Prerequisites:** Docker, Python 3.11+, an LLM API key (Anthropic, OpenAI, etc.)
 
 ```bash
-# Start Temporal dev server (requires temporal CLI)
-temporal server start-dev
+# 1. Clone and install
+git clone https://github.com/Clause-Logic/exoclaw-temporal
+cd exoclaw-temporal
+uv sync
 
-# In another terminal — start a worker
-mise run demo-turn --worker
+# 2. Start Temporal
+docker compose up -d
 
-# In another terminal — start the CLI
-mise run demo-turn
+# 3. Set your LLM key
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY, etc.
+
+# 4. Start a worker (in a separate terminal)
+uv run python -m exoclaw_temporal.turn_based --worker
+
+# 5. Run the example
+uv run python examples/test_turn_based.py
 ```
 
-## Running on kind (worker-bounce demo)
+You should see three tests pass: a plain LLM call, a tool call that writes a file, and a multi-turn conversation where memory persists across separate workflow runs.
+
+To verify durability: open the Temporal UI at http://localhost:8233 and watch the workflow history as the example runs. Every activity — `build_prompt`, `llm_chat`, `execute_tool`, `record_turn` — is recorded with its inputs and outputs.
+
+## Session-based example
 
 ```bash
-# Create 3-node cluster
+# Start the session worker (separate terminal)
+uv run python -m exoclaw_temporal.session_based --worker
+
+# Run the example
+uv run python examples/test_session_based.py
+```
+
+## Configuration
+
+Uses the same `~/.nanobot/config.json` as [exoclaw-nanobot](https://github.com/Clause-Logic/exoclaw). No new config format to learn.
+
+```bash
+# Custom config path
+uv run python -m exoclaw_temporal.turn_based --config /path/to/config.json
+
+# Custom Temporal cluster
+uv run python -m exoclaw_temporal.turn_based --temporal-url my-cluster.example.com:7233
+```
+
+## Kubernetes deployment
+
+For production: workers as a Deployment, workspace state on a shared PVC (EFS/NFS with ReadWriteMany).
+
+```bash
+# Create a 3-node kind cluster (1 control plane + 2 workers)
 mise run cluster-up
 
-# Install Temporal
+# Install Temporal via Helm
 mise run temporal-up
 
 # Build and deploy workers (2 replicas across 2 nodes)
 mise run worker-deploy
 
-# Run the bounce demo: kill a worker mid-execution, watch it resume
+# Demonstrate durability: kill a worker mid-tool-call
 mise run bounce-demo
 ```
 
-The bounce demo submits a turn with a slow shell command (`sleep 20`), then kills one worker pod. Temporal detects the heartbeat timeout (30s) and reschedules the tool activity on the surviving worker. The agent completes normally.
-
-## Workspace durability
-
-All state lives in the shared workspace volume:
-
-```
-/workspace/
-├── sessions/           ← JSONL conversation history (read/write by any worker)
-├── cron.json           ← Cron job state
-└── history/            ← CLI REPL history
-```
-
-In kind: `hostPath` or `local-path-provisioner` (single-node access). For multi-node, use an NFS or EFS CSI driver with `ReadWriteMany`.
-
-In production: replace `storageClassName: standard` in `k8s/worker/pvc.yaml` with your EFS provisioner.
+The bounce demo submits a turn with a slow shell command, kills one worker pod, and shows the activity resuming on the surviving worker.
 
 ## Architecture
 
 ```
-                    ┌──────────────────────────────┐
-                    │  Temporal Worker (2 replicas)  │
-                    │  - AgentTurnWorkflow           │
-                    │  - activities: llm_chat        │
-                    │               execute_tool     │
-                    │               build_prompt     │
-                    │               record_turn      │
-                    └──────────┬───────────────────┘
-                               │ mount
-                               ▼
-                    ┌──────────────────────────────┐
-                    │  Shared PVC (workspace)        │
-                    │  sessions/, cron.json, etc.    │
-                    └──────────────────────────────┘
+                    ┌──────────────────────────────────┐
+                    │  Temporal Worker Pool (N replicas) │
+                    │                                    │
+                    │  Workflows:  AgentTurnWorkflow     │
+                    │             AgentSessionWorkflow   │
+                    │                                    │
+                    │  Activities: build_prompt          │
+                    │              llm_chat              │
+                    │              execute_tool          │
+                    │              record_turn           │
+                    └──────────────┬───────────────────┘
+                                   │ mount
+                                   ▼
+                    ┌──────────────────────────────────┐
+                    │  Shared Workspace Volume (PVC)    │
+                    │                                    │
+                    │  sessions/    ← conversation JSONL │
+                    │  cron.json    ← cron state         │
+                    └──────────────────────────────────┘
 ```
 
-## Config
-
-Uses the same `~/.nanobot/config.json` as exoclaw-nanobot. No new config format.
-
-```bash
-# Point to a different config
-exoclaw-temporal-turn --config /path/to/config.json
-
-# Point to a non-local Temporal cluster
-exoclaw-temporal-turn --temporal-url my-temporal.example.com:7233
-```
+Workers are completely stateless. All persistent state lives either in Temporal's workflow history (in-flight execution state) or on the shared volume (conversation history, tool outputs).

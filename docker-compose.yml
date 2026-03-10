@@ -1,0 +1,22 @@
+services:
+  temporal:
+    image: temporalio/auto-setup:1.27
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=sqlite
+    healthcheck:
+      test: ["CMD", "temporal", "workflow", "list", "--namespace", "default"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  temporal-ui:
+    image: temporalio/ui:2.34
+    ports:
+      - "8233:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      temporal:
+        condition: service_healthy
